@@ -21,11 +21,12 @@ function isAdmin() { return sessionStorage.getItem('isAdmin') === 'true'; }
 function requireAdmin() { if (!isAdmin()) { window.location.href = 'admin.html'; return false; } return true; }
 function handleAgentLogin(event) { if (event) event.preventDefault(); window.location.href = 'admin.html'; }
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+function isSafeImageSource(src) { const value=String(src||'').trim(); return /^(?:https?:\/\/|\/|\.{1,2}\/|[A-Za-z0-9가-힣_-]+\/)[^\s)]+$/i.test(value); }
 function inlineMarkdown(value) {
   let out = escapeHtml(value);
   const code = [];
   out = out.split('`').map((part, i) => i % 2 ? `\u0000${code.push(part)-1}\u0000` : part).join('');
-  out = out.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, '<img alt="$1" src="$2">');
+  out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (match, alt, src) => isSafeImageSource(src) ? `<img alt="${alt}" src="${src}" loading="lazy">` : match);
   out = out.replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/~~([^~]+)~~/g, '<del>$1</del>').replace(/\*([^*]+)\*/g, '<em>$1</em>');
   out = out.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[Number(i)]}</code>`);
@@ -48,9 +49,10 @@ function renderMarkdown(src) {
   flush(); return html.join('');
 }
 function markdownToText(src) { return String(src || '').replace(/```[\s\S]*?```/g,'').replace(/!\[.*?\]\(.*?\)/g,'').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/^#{1,6}\s+/gm,'').replace(/^\s*[-*>]\s?/gm,'').replace(/[*_~`]/g,'').replace(/\n+/g,' ').trim(); }
+function firstMarkdownImage(src) { const match=String(src||'').match(/!\[[^\]]*\]\(([^)\s]+)\)/); return match && isSafeImageSource(match[1]) ? match[1] : ''; }
 async function getPosts() { const cfg=await loadConfig(); const url=`https://api.github.com/repos/${encodeURIComponent(cfg.github_owner)}/${encodeURIComponent(cfg.github_repo)}/contents/${cfg.data_file_path}`; const headers={Accept:'application/vnd.github+json'}; if(cfg.github_token && cfg.github_token!=='YOUR_GITHUB_TOKEN') headers.Authorization='token '+String(cfg.github_token).replace(/\s+/g,''); try { const r=await fetch(url,{headers}); if(r.ok){const data=await r.json(); const raw=decodeURIComponent(escape(atob(data.content.replace(/\n/g,'')))); return JSON.parse(raw);} } catch(e) {} try { const r=await fetch(cfg.data_file_path); if(r.ok)return await r.json(); } catch(e) {} return []; }
 async function savePosts(posts) { const cfg=await loadConfig(); if(!cfg.github_owner || !cfg.github_repo || !cfg.github_token || cfg.github_token==='YOUR_GITHUB_TOKEN') throw new Error('GitHub 설정이 완료되지 않았습니다.'); const url=`https://api.github.com/repos/${encodeURIComponent(cfg.github_owner)}/${encodeURIComponent(cfg.github_repo)}/contents/${cfg.data_file_path}`; const headers={Accept:'application/vnd.github+json', 'Content-Type':'application/json', Authorization:'token '+String(cfg.github_token).replace(/\s+/g,'')}; let sha; const current=await fetch(url,{headers}); if(current.ok) sha=(await current.json()).sha; const bytes=new TextEncoder().encode(JSON.stringify(posts,null,2)+'\n'); let binary=''; bytes.forEach(b=>binary+=String.fromCharCode(b)); const body={message:'chore: update posts',content:btoa(binary)}; if(sha)body.sha=sha; const r=await fetch(url,{method:'PUT',headers,body:JSON.stringify(body)}); if(!r.ok) throw new Error(`저장 실패: ${await r.text()}`); return true; }
 async function createPost(post) { const posts=await getPosts(); const next={...post,id:post.id||`${Date.now()}`,date:post.date||new Date().toISOString().slice(0,10)}; posts.unshift(next); await savePosts(posts); return next; }
 async function updatePost(post) { const posts=await getPosts(); const index=posts.findIndex(x=>String(x.id)===String(post.id)); if(index<0)throw new Error('게시글을 찾을 수 없습니다.'); posts[index]={...posts[index],...post}; await savePosts(posts); return posts[index]; }
 async function deletePost(id) { const posts=await getPosts(); await savePosts(posts.filter(x=>String(x.id)!==String(id))); }
-window.loadConfig=loadConfig; window.isAdmin=isAdmin; window.requireAdmin=requireAdmin; window.handleAgentLogin=handleAgentLogin; window.renderMarkdown=renderMarkdown; window.markdownToText=markdownToText; window.getPosts=getPosts; window.createPost=createPost; window.updatePost=updatePost; window.deletePost=deletePost;
+window.loadConfig=loadConfig; window.isAdmin=isAdmin; window.requireAdmin=requireAdmin; window.handleAgentLogin=handleAgentLogin; window.renderMarkdown=renderMarkdown; window.markdownToText=markdownToText; window.firstMarkdownImage=firstMarkdownImage; window.getPosts=getPosts; window.createPost=createPost; window.updatePost=updatePost; window.deletePost=deletePost;
