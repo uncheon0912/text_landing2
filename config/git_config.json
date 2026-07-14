@@ -1,0 +1,6 @@
+{
+  "github_token": "YOUR_GITHUB_TOKEN",
+  "github_owner": "uncheon0912",
+  "github_repo": "text_landing2",
+  "data_file_path": "data/posts.json"
+}
